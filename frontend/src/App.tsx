@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatMessage, ChatResult, createGame, loadGame, saveGame, saveResources, stopChat, streamChat, undoTo } from "./api";
+import { ChatMessage, ChatResult, createGame, exportUrl, loadGame, saveGame, saveResources, stopChat, storyPdfUrl, streamChat, undoTo } from "./api";
 import { chatText } from "./parse";
 import { STARTER_CODE, WELCOME_MESSAGE } from "./starter";
 import ChatPane from "./ChatPane";
@@ -29,6 +29,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [gameError, setGameError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const codeRef = useRef(code);
   codeRef.current = code;
   const gameIdRef = useRef<string | null>(null);
@@ -212,6 +214,25 @@ export default function App() {
 
   if (!game) return <GamePicker onOpen={onOpen} onCreate={onCreate} />;
 
+  const downloadStory = async () => {
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const res = await fetch(storyPdfUrl(game.id));
+      if (!res.ok) throw new Error(`erreur du serveur ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${game.id}-histoire.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const askToFix = () => {
     if (!gameError) return;
     send(
@@ -228,7 +249,15 @@ export default function App() {
         <span className={`save ${saveState}`}>
           {saveState === "saved" ? "✔ Sauvegardé" : saveState === "saving" ? "Sauvegarde…" : "⚠ Pas sauvegardé"}
         </span>
+        <span className="spacer" />
+        <a className="button" href={exportUrl(game.id)} download title="Télécharger le jeu dans un fichier zip">
+          📦 Exporter
+        </a>
+        <button disabled={pdfBusy} onClick={downloadStory} title="Le livret de ton jeu, à imprimer ou à garder">
+          {pdfBusy ? "Je prépare ton livret…" : "📖 Mon histoire (PDF)"}
+        </button>
       </div>
+      {pdfError && <div className="error topbar-error">Oups, impossible de créer le livret : {pdfError}</div>}
       <div className="app">
         <ChatPane
           messages={messages.map((m, i) => ({

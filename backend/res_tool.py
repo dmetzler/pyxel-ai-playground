@@ -78,8 +78,10 @@ def describe(res: Path) -> str:
     return "\n".join(out) or "(fichier vide)"
 
 
-def check(game: Path, frames: int = 60) -> str:
-    """Run game.py headless for a few frames; raises on any crash."""
+def check(game: Path, frames: int = 60, shot: Path | None = None) -> str:
+    """Run game.py headless for a few frames; raises on any crash.
+
+    With `shot`, the last frame is saved there as a PNG (scaled x3)."""
     real_init = pyxel.init
 
     def fake_run(update, draw):
@@ -87,6 +89,9 @@ def check(game: Path, frames: int = 60) -> str:
             update()
             draw()
             pyxel.flip()  # advances pyxel.frame_count, which games often use
+        if shot is not None:
+            # Image.save adds ".png" itself.
+            pyxel.screen.save(str(shot.resolve().with_suffix("")), 3)
         raise SystemExit(0)
 
     # A huge fps so flip() does not wait for real time.
@@ -112,5 +117,8 @@ if __name__ == "__main__":
         print(describe(res))
     elif cmd == "check":
         print(check(res))
+    elif cmd == "screenshot":  # screenshot <game.py> <out.png> [frames]
+        frames = int(sys.argv[4]) if len(sys.argv) > 4 else 30
+        check(res, frames, shot=Path(sys.argv[3]))
     else:
         sys.exit(f"commande inconnue : {cmd}")
