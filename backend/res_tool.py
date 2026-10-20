@@ -86,9 +86,11 @@ def check(game: Path, frames: int = 60) -> str:
         for _ in range(frames):
             update()
             draw()
+            pyxel.flip()  # advances pyxel.frame_count, which games often use
         raise SystemExit(0)
 
-    pyxel.init = lambda *a, **k: real_init(*a, **{**k, "headless": True})
+    # A huge fps so flip() does not wait for real time.
+    pyxel.init = lambda *a, **k: real_init(*a, **{**k, "headless": True, "fps": 10000})
     pyxel.run = fake_run
     # pyxel.init moves to the main script's folder (this file): keep the game's own folder.
     game = game.resolve()
