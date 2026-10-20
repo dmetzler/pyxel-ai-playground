@@ -147,7 +147,10 @@ async def stop_chat(game_id: str) -> dict:
     """Stop Pix's running turn; what it already did is kept (and committed)."""
     _game_dir(game_id)
     agent = _agents.get(game_id)
-    if agent is not None:
+    lock = _locks.get(game_id)
+    # Strands clears its cancel flag only when a turn ends: cancelling between
+    # turns would kill the next one before it starts.
+    if agent is not None and lock is not None and lock.locked():
         agent.cancel()
     return {"ok": True}
 
