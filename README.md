@@ -20,6 +20,8 @@ A friendly web app where middle-school kids build a game with the [Pyxel](https:
 - **Git history**: each game folder is its own git repository (created when the game is created, or at the first message for older games). Before each Pix turn the kid's own changes are committed ("Modifications de l'élève"), then Pix's changes ("Pix : <message>"). `chat.json` is not versioned (Pix's memory in `.pix/` is). In the chat, **⏹ Arrêter** stops Pix mid-turn (what it already did is kept and committed), and **↩️ Annuler** on a kid's message puts the game (code, resources and Pix's memory) back to the version just before it and removes the rest of the chat. Undo is a new commit, so nothing is ever lost: `git log` in the game folder shows everything.
 - **URL**: the open game is in the URL (`http://localhost:8080/snake/`), so refreshing or bookmarking lands on it (nginx and the Vite dev server fall back to the app for these paths).
 - **Saved games**: the start screen lets kids create a new game or reopen an old one. Each game is a folder in `games/<name>/` containing `game.py` (also runnable with desktop Pyxel: `pyxel run games/<name>/game.py`), `chat.json` (the conversation), `meta.json`, and `res.pyxres` once the kid has drawn sprites. Changes are saved automatically. Set `GAMES_DIR` in `backend/.env` to store them elsewhere.
+- **Delete, export, import**: each game in the start screen has a 🗑️ button (with a confirmation; refused while Pix is working on it). **📦 Exporter** in the top bar downloads the whole game folder as a zip (code, sprites, chat, Pix's memory and git history); **📥 Importer un jeu** on the start screen turns such a zip into a new game (never overwriting one). Zips of a plain folder with a `game.py` work too. Imported zips are checked (no paths outside the folder, no links, size limits) and their git hooks and config are dropped.
+- **Mon histoire (PDF)**: the top bar button downloads a French booklet the kid takes home (`backend/story.py`, WeasyPrint): a cover with a screenshot of the app and of the finished game, one page per kid message (what they asked, Pix's explanation, a screenshot of the game after that step, the code lines that step added or changed, highlighted in green), the full final code, and how to install Pyxel and keep going at home. Each screenshot comes from running that commit's `game.py` headless for 30 frames (`res_tool.py screenshot`). The app screenshot on the cover is `backend/assets/app.png`.
 - **Sprites**: the 🎨 Sprites tab embeds Pyxel's official resource editor (images, tilemaps, sounds, music). Its 💾 save button writes `res.pyxres` into the game folder, and the preview loads it so the game can use `pyxel.load("res.pyxres")` and `pyxel.blt(...)`. **🔄 Recharger** reloads the saved file from disk into the editor and the preview.
 - **Pix draws and composes too**: the `modifier_ressources` tool runs a small Python script with headless Pyxel on the server (`backend/res_tool.py`, 20 s limit, on a copy so a failing script leaves the file untouched and Pix gets the error to fix it). It draws sprites pixel by pixel, lays out tilemaps and writes sounds and music into `res.pyxres`, which the kid then tweaks in the Sprites tab. `voir_ressources` gives Pix a text description of the current file, so the kid's edits are kept. `tester_jeu` runs the game headless for 60 frames and returns any crash. This needs `pyxel` in the backend venv (`pip install -r requirements.txt`).
 - **Language**: the UI and the tutor (Pix) are in French. The tutor prompt lives in `backend/prompt_fr.md`.
@@ -47,6 +49,7 @@ pip install -r requirements.txt
 cp .env.example .env   # then fill in LITELLM_BASE_URL, LITELLM_API_KEY, LITELLM_MODEL
 uvicorn app:app --reload --port 8000
 ```
+The PDF story needs Pango on the machine (WeasyPrint): `brew install pango` on macOS, `apt install libpango-1.0-0 libpangoft2-1.0-0` on Debian/Ubuntu.
 
 ### 2. Frontend
 ```bash
@@ -64,19 +67,22 @@ cd backend && pip install -r requirements-dev.txt && python -m pytest -q
 cd frontend && npm test
 ```
 
-- Backend (`backend/tests/`): the real FastAPI app, Strands harness, git and headless Pyxel, with a scripted model in place of LiteLLM (no network, no API key). Covers saving/loading games, the chat stream and its commits, the folder sandbox, ⏹ stop, ↩️ undo, and `res_tool.py` (build, describe, check).
-- Frontend (`frontend/src/*.test.ts`, Vitest): the change-gutter diff, the chat text cleanup and the SSE stream parser.
+- Backend (`backend/tests/`): the real FastAPI app, Strands harness, git and headless Pyxel, with a scripted model in place of LiteLLM (no network, no API key). Covers saving/loading games, the chat stream and its commits, the folder sandbox, ⏹ stop, ↩️ undo, delete / export / import (including unsafe zips), the PDF story, and `res_tool.py` (build, describe, check, screenshot).
+- Frontend (`frontend/src/*.test.ts`, Vitest): the change-gutter diff, the chat text cleanup, the SSE stream parser, and the import / delete calls.
 
 ## Project layout
 ```
 backend/
-  app.py          API: games on disk, git history, chat stream (SSE), stop, undo
+  app.py          API: games on disk, git history, chat stream (SSE), stop, undo, delete, export/import
   pix_agent.py    the Pix agent: Strands harness, sandbox, resource and test tools
-  res_tool.py     headless Pyxel: draw/compose into res.pyxres, describe it, test-run a game
+  res_tool.py     headless Pyxel: draw/compose into res.pyxres, describe it, test-run or screenshot a game
+  story.py        the PDF story of a game (WeasyPrint)
+  assets/         the app screenshot used on the PDF cover
   prompt_fr.md    the tutor prompt (French)
   tests/          pytest suite
 frontend/src/
-  App.tsx         game picker, URL routing, chat turn, undo
+  App.tsx         game picker, URL routing, chat turn, undo, export and PDF buttons
+  GamePicker.tsx  start screen: create, open, delete, import
   ChatPane.tsx    the chat (stop / undo buttons)
   RightPane.tsx   Aperçu / Code / Sprites tabs
   changeGutter.ts the "what changed" gutter in the code editor
