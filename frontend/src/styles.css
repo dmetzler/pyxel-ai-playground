@@ -7,10 +7,14 @@ body {
 }
 .shell { display: flex; flex-direction: column; height: 100%; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 10px 12px 0; font-size: 18px; }
-.topbar button, .new-game button, .game-list button {
-  font: inherit; font-weight: 700; cursor: pointer;
+.topbar button, .topbar a.button, .new-game button, .game-list button, .games-head button {
+  font: inherit; font-weight: 700; cursor: pointer; color: #222; text-decoration: none;
   border: 2px solid #222; border-radius: 12px; padding: 6px 12px; background: #fff;
 }
+.topbar .spacer { flex: 1; }
+.topbar a.button:hover, .topbar button:hover:not(:disabled) { background: #fff4cc; }
+.topbar button:disabled { opacity: 0.6; cursor: default; }
+.topbar-error { margin: 8px 12px 0; }
 .topbar .save { font-size: 14px; color: #2a7a4f; }
 .topbar .save.saving { color: #888; }
 .topbar .save.error { color: #b00020; font-weight: 700; }
@@ -31,8 +35,14 @@ body {
 .new-game button { background: #06d6a0; }
 .new-game button:disabled { opacity: 0.5; cursor: default; }
 .game-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.game-list button { width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; }
+.game-list li { display: flex; gap: 8px; }
+.game-list button.open { flex: 1; width: auto; display: flex; justify-content: space-between; align-items: center; text-align: left; }
 .game-list button:hover { background: #fff4cc; }
+.game-list button.delete { flex: none; padding: 6px 10px; }
+.game-list button.delete:hover { background: #ffd6d6; border-color: #b00020; }
+.games-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.games-head button { font-size: 15px; padding: 4px 10px; margin-top: 12px; }
+.games-head button:hover:not(:disabled) { background: #fff4cc; }
 .game-list span { font-weight: 400; font-size: 14px; color: #666; }
 .pane {
   display: flex;

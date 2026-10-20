@@ -83,8 +83,15 @@ export interface Game {
   resources: string | null;
 }
 
+/** Errors carry the server's French message ("detail") when it sent one. */
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`Erreur du serveur ${res.status}`);
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((b) => (typeof b?.detail === "string" ? b.detail : null))
+      .catch(() => null);
+    throw new Error(detail ?? `Erreur du serveur ${res.status}`);
+  }
   return res.json();
 }
 
@@ -124,3 +131,18 @@ export const undoTo = (id: string, commit: string) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ commit }),
   }).then((r) => json<{ code: string; base_code: string | null; resources: string | null }>(r));
+
+/** Delete a game folder for good (refused while Pix works on it). */
+export const deleteGame = (id: string) =>
+  fetch(`/api/games/${id}`, { method: "DELETE" }).then((r) => json<{ ok: boolean }>(r));
+
+/** Import a zip made by "Exporter"; it becomes a new game. */
+export const importGame = (file: File) =>
+  fetch("/api/games/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: file,
+  }).then((r) => json<{ id: string; name: string }>(r));
+
+export const exportUrl = (id: string) => `/api/games/${id}/export`;
+export const storyPdfUrl = (id: string) => `/api/games/${id}/story.pdf`;

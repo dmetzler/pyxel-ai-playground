@@ -5,18 +5,21 @@ and res.pyxres with tools; when a turn ends we send the files back to the UI.
 """
 import asyncio
 import base64
+import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import unicodedata
+import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv()
@@ -341,6 +344,123 @@ async def save_resources(game_id: str, req: ResourcesSave) -> dict:
 async def save_game(game_id: str, req: GameSave) -> dict:
     _write_game(_game_dir(game_id), req.code, req.messages)
     return {"ok": True}
+
+
+@app.delete("/api/games/{game_id}")
+async def delete_game(game_id: str) -> dict:
+    d = _game_dir(game_id)
+    lock = _locks.get(game_id)
+    if lock is not None and lock.locked():
+        raise HTTPException(status_code=409, detail="Pix travaille encore sur ce jeu.")
+    shutil.rmtree(d)
+    _agents.pop(game_id, None)
+    _locks.pop(game_id, None)
+    return {"ok": True}
+
+
+@app.get("/api/games/{game_id}/export")
+async def export_game(game_id: str) -> Response:
+    d = _game_dir(game_id)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(d.rglob("*")):
+            if f.is_file() and not f.is_symlink() and "__pycache__" not in f.parts:
+                z.write(f, f.relative_to(d).as_posix())
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{game_id}.zip"'},
+    )
+
+
+MAX_IMPORT_BYTES = 50 * 1024 * 1024
+MAX_UNZIPPED_BYTES = 200 * 1024 * 1024
+# An imported .git must not be able to run commands: no hooks, a config with nothing in it.
+SAFE_GIT_CONFIG = "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n"
+
+
+def _bad_zip(detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail=detail)
+
+
+def _zip_members(z: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str]]:
+    """(entry, path inside the game folder), refusing anything that could escape it."""
+    entries = [i for i in z.infolist() if not i.is_dir()]
+    if sum(i.file_size for i in entries) > MAX_UNZIPPED_BYTES:
+        raise _bad_zip("Ce fichier est trop gros.")
+    for i in entries:
+        parts = i.filename.replace("\\", "/").split("/")
+        is_link = (i.external_attr >> 16) & 0o170000 == 0o120000
+        if i.filename.startswith(("/", "\\")) or ":" in parts[0] or ".." in parts or is_link:
+            raise _bad_zip("Ce fichier zip contient des chemins interdits.")
+    names = [i.filename.replace("\\", "/") for i in entries]
+    if "game.py" in names:
+        return list(zip(entries, names))
+    # Everything inside one top folder (zipped from the file explorer): strip it.
+    tops = {n.split("/")[0] for n in names}
+    if len(tops) == 1 and all("/" in n for n in names):
+        top = tops.pop()
+        inner = [n[len(top) + 1:] for n in names]
+        if "game.py" in inner:
+            return list(zip(entries, inner))
+    raise _bad_zip("Ce fichier zip ne contient pas de jeu (game.py manquant).")
+
+
+@app.post("/api/games/import")
+async def import_game(request: Request) -> dict:
+    data = await request.body()
+    if len(data) > MAX_IMPORT_BYTES:
+        raise _bad_zip("Ce fichier est trop gros.")
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        raise _bad_zip("Ce fichier n'est pas un jeu exporté (zip illisible).")
+    with z:
+        members = _zip_members(z)
+        name = ""
+        meta = next((i for i, p in members if p == "meta.json"), None)
+        if meta is not None:
+            try:
+                name = str(json.loads(z.read(meta)).get("name", "")).strip()[:80]
+            except (ValueError, AttributeError):
+                name = ""
+        if not name:
+            first = members[0][0].filename.replace("\\", "/")
+            name = first.split("/")[0] if "/" in first and not first.startswith(".") else "Jeu importé"
+        game_id = _new_game_id(name)
+        d = GAMES_DIR / game_id
+        d.mkdir()
+        try:
+            for info, path in members:
+                target = d / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(z.read(info))
+            (d / "meta.json").write_text(
+                json.dumps({"name": name, "created": time.time()}, ensure_ascii=False), encoding="utf-8"
+            )
+            if not (d / "chat.json").is_file():
+                _write_chat(d, [])
+            if (d / ".git").is_dir():
+                shutil.rmtree(d / ".git" / "hooks", ignore_errors=True)
+                (d / ".git" / "config").write_text(SAFE_GIT_CONFIG)
+            _ensure_repo(d)
+        except Exception:
+            shutil.rmtree(d, ignore_errors=True)
+            raise
+    return {"id": game_id, "name": name}
+
+
+@app.get("/api/games/{game_id}/story.pdf")
+async def story_pdf(game_id: str) -> Response:
+    d = _game_dir(game_id)
+    from story import build_story_pdf
+
+    pdf = await asyncio.to_thread(build_story_pdf, d)
+    return Response(
+        pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{game_id}-histoire.pdf"'},
+    )
 
 
 def _sse(obj: dict) -> str:
