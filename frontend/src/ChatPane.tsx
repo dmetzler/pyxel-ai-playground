@@ -1,0 +1,87 @@
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+
+interface Bubble {
+  role: "user" | "assistant";
+  text: string;
+  activity: string | null;
+  canUndo: boolean;
+}
+
+const IDEAS = ["Je veux créer un jeu de labyrinthe", "Un jeu de tir dans l'espace", "Un chat qui attrape des poissons"];
+
+export default function ChatPane(props: {
+  messages: Bubble[];
+  busy: boolean;
+  error: string | null;
+  onSend: (text: string) => void;
+  onStop: () => void;
+  onUndo: (index: number) => void;
+}) {
+  const [input, setInput] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [props.messages]);
+
+  const submit = (text: string) => {
+    if (!text.trim() || props.busy) return;
+    props.onSend(text);
+    setInput("");
+  };
+
+  return (
+    <section className="pane chat">
+      <header className="pane-title">💬 Discussion</header>
+      <div className="messages">
+        {props.messages.map((m, i) => (
+          <div key={i} className={`bubble ${m.role}`}>
+            {m.text ? <ReactMarkdown>{m.text}</ReactMarkdown> : null}
+            {m.activity && <div className="building">{m.activity}</div>}
+            {!m.text && !m.activity && props.busy && <div className="building">🤔 Je réfléchis…</div>}
+            {m.canUndo && (
+              <button className="undo" title="Remettre le jeu comme avant ce message" onClick={() => props.onUndo(i)}>
+                ↩️ Annuler
+              </button>
+            )}
+          </div>
+        ))}
+        {props.messages.length === 1 && (
+          <div className="ideas">
+            {IDEAS.map((idea) => (
+              <button key={idea} onClick={() => submit(idea)}>{idea}</button>
+            ))}
+          </div>
+        )}
+        {props.error && <div className="error">Oups, impossible de parler à Pix : {props.error}</div>}
+        <div ref={endRef} />
+      </div>
+      <form
+        className="composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit(input);
+        }}
+      >
+        <textarea
+          value={input}
+          placeholder="Dis à Pix quoi construire ou changer…"
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit(input);
+            }
+          }}
+          rows={2}
+        />
+        {props.busy ? (
+          <button type="button" className="stop" onClick={props.onStop}>⏹ Arrêter</button>
+        ) : (
+          <button type="submit" disabled={!input.trim()}>Envoyer</button>
+        )}
+      </form>
+    </section>
+  );
+}

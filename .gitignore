@@ -1,0 +1,16 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+backend/.env
+.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.DS_Store
+
+# Saved games (kids' work)
+games/
+.pytest_cache/
