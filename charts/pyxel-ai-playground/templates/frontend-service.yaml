@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pyxel.frontendName" . }}
+  labels:
+    {{- include "pyxel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    # Targets the auth sidecar (4180) when auth.enabled, nginx (80) otherwise.
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+  selector:
+    {{- include "pyxel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}

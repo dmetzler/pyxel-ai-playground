@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { GameSummary, deleteGame, importGame, listGames } from "./api";
+import { LOCALES, useI18n } from "./i18n";
+import LanguageSelect from "./LanguageSelect";
 
 export default function GamePicker(props: {
   onOpen: (id: string) => void;
   onCreate: (name: string) => Promise<void>;
 }) {
+  const { lang, t } = useI18n();
   const [games, setGames] = useState<GameSummary[] | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +31,7 @@ export default function GamePicker(props: {
   };
 
   const remove = async (g: GameSummary) => {
-    if (!window.confirm(`Supprimer « ${g.name} » ? Le jeu et toute son histoire seront effacés pour toujours.`)) {
+    if (!window.confirm(t("picker.deleteConfirm", { name: g.name }))) {
       return;
     }
     setError(null);
@@ -56,8 +59,11 @@ export default function GamePicker(props: {
   return (
     <div className="picker">
       <div className="pane picker-card">
-        <h1>🎮 Atelier de jeux Pyxel</h1>
-        <h2>Nouveau jeu</h2>
+        <div className="picker-head">
+          <h1>{t("picker.title")}</h1>
+          <LanguageSelect />
+        </div>
+        <h2>{t("picker.newGame")}</h2>
         <form
           className="new-game"
           onSubmit={(e) => {
@@ -67,16 +73,16 @@ export default function GamePicker(props: {
         >
           <input
             value={name}
-            placeholder="Le nom de ton jeu (ex : Le labyrinthe du chat)"
+            placeholder={t("picker.namePlaceholder")}
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
-          <button type="submit" disabled={!name.trim()}>Créer</button>
+          <button type="submit" disabled={!name.trim()}>{t("picker.create")}</button>
         </form>
         <div className="games-head">
-          <h2>Mes jeux</h2>
+          <h2>{t("picker.myGames")}</h2>
           <button className="import" disabled={importing} onClick={() => fileInput.current?.click()}>
-            {importing ? "Import en cours…" : "📥 Importer un jeu"}
+            {importing ? t("picker.importing") : t("picker.import")}
           </button>
           <input
             ref={fileInput}
@@ -89,17 +95,17 @@ export default function GamePicker(props: {
             }}
           />
         </div>
-        {error && <div className="error">Oups : {error}</div>}
-        {games === null && !error && <p className="hint">Chargement…</p>}
-        {games?.length === 0 && <p className="hint">Pas encore de jeu. Crée le premier !</p>}
+        {error && <div className="error">{t("picker.error", { error })}</div>}
+        {games === null && !error && <p className="hint">{t("picker.loading")}</p>}
+        {games?.length === 0 && <p className="hint">{t("picker.empty")}</p>}
         <ul className="game-list">
           {games?.map((g) => (
             <li key={g.id}>
               <button className="open" onClick={() => props.onOpen(g.id)}>
                 <strong>{g.name}</strong>
-                <span>modifié le {new Date(g.updated * 1000).toLocaleString("fr-FR")}</span>
+                <span>{t("picker.updated", { date: new Date(g.updated * 1000).toLocaleString(LOCALES[lang]) })}</span>
               </button>
-              <button className="delete" title="Supprimer ce jeu" aria-label={`Supprimer ${g.name}`} onClick={() => remove(g)}>
+              <button className="delete" title={t("picker.deleteTitle")} aria-label={t("picker.deleteLabel", { name: g.name })} onClick={() => remove(g)}>
                 🗑️
               </button>
             </li>

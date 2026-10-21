@@ -15,12 +15,16 @@ import time
 import unicodedata
 import zipfile
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
+
+import i18n
+from i18n import t, tr
 
 load_dotenv()
 
@@ -42,6 +46,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(i18n.LangMiddleware)
 
 
 class Message(BaseModel):
@@ -73,7 +78,7 @@ _locks: dict[str, asyncio.Lock] = {}
 def _agent_for(game_id: str, d: Path, history: list[Message]):
     if game_id not in _agents:
         fresh = not pix_agent.has_session(d)
-        agent = pix_agent.make_agent(d)
+        agent = pix_agent.make_agent(d, _game_lang(d))
         if fresh and not agent.messages:
             agent.messages = _seed_messages(history)
         _agents[game_id] = agent
@@ -99,6 +104,7 @@ def _seed_messages(history: list[Message]) -> list[dict]:
 async def chat(req: ChatRequest) -> StreamingResponse:
     d = _game_dir(req.game_id)
     lock = _locks.setdefault(req.game_id, asyncio.Lock())
+    lang = _game_lang(d)
 
     async def event_stream():
         async with lock:
@@ -106,7 +112,7 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 (d / "game.py").write_text(req.current_code, encoding="utf-8")
             # Save the kid's own changes first, so undoing Pix's turn keeps them.
             _ensure_repo(d)
-            before = _commit(d, "Modifications de l'élève")
+            before = _commit(d, t(lang, "commit_student"))
             res_before = _read_resources(d)
             started: set[str] = set()
             reply = ""
@@ -125,8 +131,8 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                             yield _sse({"tool": tu.get("name")})
             except Exception as exc:  # report any agent/model failure to the kid's UI
                 _agents.pop(req.game_id, None)
-                yield _sse({"error": f"Pix a eu un problème : {type(exc).__name__}: {exc}"[:800]})
-            _commit(d, "Pix : " + " ".join(req.message.split())[:72])
+                yield _sse({"error": tr("pix_problem", error=f"{type(exc).__name__}: {exc}")[:800]})
+            _commit(d, t(lang, "commit_pix", msg=" ".join(req.message.split())[:72]))
             # Save the turn now: the page may be closed before the UI autosaves.
             _append_chat(d, [
                 Message(role="user", content=req.message, commit=before),
@@ -168,19 +174,20 @@ async def undo(game_id: str, req: UndoRequest) -> dict:
     d = _game_dir(game_id)
     lock = _locks.setdefault(game_id, asyncio.Lock())
     if lock.locked():
-        raise HTTPException(status_code=409, detail="Pix est encore en train de travailler.")
+        raise HTTPException(status_code=409, detail=tr("pix_busy"))
+    lang = _game_lang(d)
     async with lock:
         if not COMMIT_RE.match(req.commit) or not (d / ".git").is_dir():
-            raise HTTPException(status_code=400, detail="Version inconnue")
+            raise HTTPException(status_code=400, detail=tr("unknown_version"))
         try:
             _git(d, "cat-file", "-e", f"{req.commit}^{{commit}}")
         except subprocess.CalledProcessError:
-            raise HTTPException(status_code=400, detail="Version inconnue")
+            raise HTTPException(status_code=400, detail=tr("unknown_version"))
         # Commit the old version on top instead of rewriting history, so an undo can be undone too.
-        _commit(d, "Modifications de l'élève")
+        _commit(d, t(lang, "commit_student"))
         _git(d, "read-tree", "-u", "--reset", req.commit)
         _git(d, "clean", "-q", "-fd")
-        _commit(d, f"Annulation : retour à la version {req.commit[:7]}")
+        _commit(d, t(lang, "commit_undo", commit=req.commit[:7]))
         # Pix's conversation lives in .pix/ (tracked): reload it from disk.
         _agents.pop(game_id, None)
         return {
@@ -210,7 +217,7 @@ def _ensure_repo(d: Path) -> None:
         return
     _git(d, "init", "-q", "-b", "main")
     (d / ".gitignore").write_text(GAME_GITIGNORE, encoding="utf-8")
-    _commit(d, "Début du jeu")
+    _commit(d, t(_game_lang(d), "commit_start"))
 
 
 def _base_code(d: Path) -> str | None:
@@ -242,6 +249,7 @@ class GameCreate(BaseModel):
     name: str
     code: str
     messages: list[Message]
+    lang: Literal["fr", "en", "pl"] = "fr"
 
 
 class GameSave(BaseModel):
@@ -253,8 +261,20 @@ def _game_dir(game_id: str) -> Path:
     # The regex keeps ids to plain slugs, so a request can't escape GAMES_DIR.
     d = GAMES_DIR / game_id
     if not GAME_ID_RE.match(game_id) or not d.is_dir():
-        raise HTTPException(status_code=404, detail="Jeu introuvable")
+        raise HTTPException(status_code=404, detail=tr("game_not_found"))
     return d
+
+
+def _read_meta(d: Path) -> dict:
+    return json.loads((d / "meta.json").read_text(encoding="utf-8"))
+
+
+def _game_lang(d: Path) -> str:
+    """The game's language from meta.json; games made before languages existed are French."""
+    try:
+        return i18n.norm_lang(_read_meta(d).get("lang"))
+    except (OSError, ValueError, AttributeError):
+        return i18n.DEFAULT_LANG
 
 
 def _new_game_id(name: str) -> str:
@@ -290,19 +310,21 @@ async def list_games() -> list[dict]:
     for d in GAMES_DIR.iterdir():
         meta, code = d / "meta.json", d / "game.py"
         if GAME_ID_RE.match(d.name) and meta.is_file() and code.is_file():
-            name = json.loads(meta.read_text(encoding="utf-8"))["name"]
-            games.append({"id": d.name, "name": name, "updated": code.stat().st_mtime})
+            m = json.loads(meta.read_text(encoding="utf-8"))
+            games.append({"id": d.name, "name": m["name"], "lang": i18n.norm_lang(m.get("lang")),
+                          "updated": code.stat().st_mtime})
     return sorted(games, key=lambda g: g["updated"], reverse=True)
 
 
 @app.post("/api/games")
 async def create_game(req: GameCreate) -> dict:
-    name = req.name.strip()[:80] or "Mon jeu"
+    name = req.name.strip()[:80] or t(req.lang, "default_name")
     game_id = _new_game_id(name)
     d = GAMES_DIR / game_id
     d.mkdir()
     (d / "meta.json").write_text(
-        json.dumps({"name": name, "created": time.time()}, ensure_ascii=False), encoding="utf-8"
+        json.dumps({"name": name, "created": time.time(), "lang": req.lang}, ensure_ascii=False),
+        encoding="utf-8",
     )
     _write_game(d, req.code, req.messages)
     _ensure_repo(d)
@@ -314,7 +336,8 @@ async def load_game(game_id: str) -> dict:
     d = _game_dir(game_id)
     return {
         "id": game_id,
-        "name": json.loads((d / "meta.json").read_text(encoding="utf-8"))["name"],
+        "name": _read_meta(d)["name"],
+        "lang": _game_lang(d),
         "code": (d / "game.py").read_text(encoding="utf-8"),
         "base_code": _base_code(d),
         "messages": json.loads((d / "chat.json").read_text(encoding="utf-8")),
@@ -351,7 +374,7 @@ async def delete_game(game_id: str) -> dict:
     d = _game_dir(game_id)
     lock = _locks.get(game_id)
     if lock is not None and lock.locked():
-        raise HTTPException(status_code=409, detail="Pix travaille encore sur ce jeu.")
+        raise HTTPException(status_code=409, detail=tr("pix_busy_game"))
     shutil.rmtree(d)
     _agents.pop(game_id, None)
     _locks.pop(game_id, None)
@@ -387,12 +410,12 @@ def _zip_members(z: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str]]:
     """(entry, path inside the game folder), refusing anything that could escape it."""
     entries = [i for i in z.infolist() if not i.is_dir()]
     if sum(i.file_size for i in entries) > MAX_UNZIPPED_BYTES:
-        raise _bad_zip("Ce fichier est trop gros.")
+        raise _bad_zip(tr("zip_too_big"))
     for i in entries:
         parts = i.filename.replace("\\", "/").split("/")
         is_link = (i.external_attr >> 16) & 0o170000 == 0o120000
         if i.filename.startswith(("/", "\\")) or ":" in parts[0] or ".." in parts or is_link:
-            raise _bad_zip("Ce fichier zip contient des chemins interdits.")
+            raise _bad_zip(tr("zip_bad_paths"))
     names = [i.filename.replace("\\", "/") for i in entries]
     if "game.py" in names:
         return list(zip(entries, names))
@@ -403,30 +426,32 @@ def _zip_members(z: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str]]:
         inner = [n[len(top) + 1:] for n in names]
         if "game.py" in inner:
             return list(zip(entries, inner))
-    raise _bad_zip("Ce fichier zip ne contient pas de jeu (game.py manquant).")
+    raise _bad_zip(tr("zip_no_game"))
 
 
 @app.post("/api/games/import")
 async def import_game(request: Request) -> dict:
     data = await request.body()
     if len(data) > MAX_IMPORT_BYTES:
-        raise _bad_zip("Ce fichier est trop gros.")
+        raise _bad_zip(tr("zip_too_big"))
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
-        raise _bad_zip("Ce fichier n'est pas un jeu exporté (zip illisible).")
+        raise _bad_zip(tr("zip_unreadable"))
     with z:
         members = _zip_members(z)
-        name = ""
+        name, lang = "", i18n.DEFAULT_LANG
         meta = next((i for i, p in members if p == "meta.json"), None)
         if meta is not None:
             try:
-                name = str(json.loads(z.read(meta)).get("name", "")).strip()[:80]
+                old_meta = json.loads(z.read(meta))
+                name = str(old_meta.get("name", "")).strip()[:80]
+                lang = i18n.norm_lang(old_meta.get("lang"))
             except (ValueError, AttributeError):
-                name = ""
+                name, lang = "", i18n.DEFAULT_LANG
         if not name:
             first = members[0][0].filename.replace("\\", "/")
-            name = first.split("/")[0] if "/" in first and not first.startswith(".") else "Jeu importé"
+            name = first.split("/")[0] if "/" in first and not first.startswith(".") else t(lang, "imported_name")
         game_id = _new_game_id(name)
         d = GAMES_DIR / game_id
         d.mkdir()
@@ -436,7 +461,8 @@ async def import_game(request: Request) -> dict:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(z.read(info))
             (d / "meta.json").write_text(
-                json.dumps({"name": name, "created": time.time()}, ensure_ascii=False), encoding="utf-8"
+                json.dumps({"name": name, "created": time.time(), "lang": lang}, ensure_ascii=False),
+                encoding="utf-8",
             )
             if not (d / "chat.json").is_file():
                 _write_chat(d, [])
@@ -456,10 +482,11 @@ async def story_pdf(game_id: str) -> Response:
     from story import build_story_pdf
 
     pdf = await asyncio.to_thread(build_story_pdf, d)
+    story_name = t(_game_lang(d), "story_file")
     return Response(
         pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{game_id}-histoire.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{game_id}-{story_name}.pdf"'},
     )
 
 

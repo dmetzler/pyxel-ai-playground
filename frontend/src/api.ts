@@ -1,3 +1,5 @@
+import { Lang, getLang, translate } from "./i18n";
+
 export type Role = "user" | "assistant";
 export interface ChatMessage {
   role: Role;
@@ -14,6 +16,14 @@ export interface ChatResult {
   resourcesChanged: boolean;
 }
 
+/** fetch() for /api calls: tells the server the UI language (X-Lang), which
+ * it uses for its error messages. */
+export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "X-Lang": getLang() } });
+}
+
+const serverError = (status: number) => new Error(translate(getLang(), "server.error", { status }));
+
 /** Send one message to Pix and stream the reply. Pix edits the game's files
  * itself; the final event carries their new content. */
 export async function streamChat(
@@ -25,14 +35,14 @@ export async function streamChat(
   onTool: (name: string) => void,
   signal?: AbortSignal,
 ): Promise<ChatResult> {
-  const res = await fetch("/api/chat", {
+  const res = await apiFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ game_id: gameId, message, current_code: currentCode, history }),
     signal,
   });
   if (!res.ok || !res.body) {
-    throw new Error(`Erreur du serveur ${res.status}`);
+    throw serverError(res.status);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -66,13 +76,14 @@ export async function streamChat(
       }
     }
   }
-  throw new Error(error ?? "La connexion avec Pix a été coupée.");
+  throw new Error(error ?? translate(getLang(), "chat.connectionLost"));
 }
 
 export interface GameSummary {
   id: string;
   name: string;
   updated: number;
+  lang: Lang;
 }
 export interface Game {
   id: string;
@@ -81,40 +92,41 @@ export interface Game {
   base_code: string | null;
   messages: ChatMessage[];
   resources: string | null;
+  lang: Lang;
 }
 
-/** Errors carry the server's French message ("detail") when it sent one. */
+/** Errors carry the server's message (in the X-Lang language) ("detail") when it sent one. */
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const detail = await res
       .json()
       .then((b) => (typeof b?.detail === "string" ? b.detail : null))
       .catch(() => null);
-    throw new Error(detail ?? `Erreur du serveur ${res.status}`);
+    throw detail ? new Error(detail) : serverError(res.status);
   }
   return res.json();
 }
 
-export const listGames = () => fetch("/api/games").then((r) => json<GameSummary[]>(r));
+export const listGames = () => apiFetch("/api/games").then((r) => json<GameSummary[]>(r));
 
-export const loadGame = (id: string) => fetch(`/api/games/${id}`).then((r) => json<Game>(r));
+export const loadGame = (id: string) => apiFetch(`/api/games/${id}`).then((r) => json<Game>(r));
 
-export const createGame = (name: string, code: string, messages: ChatMessage[]) =>
-  fetch("/api/games", {
+export const createGame = (name: string, code: string, messages: ChatMessage[], lang: Lang = getLang()) =>
+  apiFetch("/api/games", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, code, messages }),
-  }).then((r) => json<{ id: string; name: string }>(r));
+    body: JSON.stringify({ name, code, messages, lang }),
+  }).then((r) => json<{ id: string; name: string; lang?: Lang }>(r));
 
 export const saveGame = (id: string, code: string, messages: ChatMessage[]) =>
-  fetch(`/api/games/${id}`, {
+  apiFetch(`/api/games/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, messages }),
   }).then((r) => json<{ ok: boolean }>(r));
 
 export const saveResources = (id: string, data: string) =>
-  fetch(`/api/games/${id}/resources`, {
+  apiFetch(`/api/games/${id}/resources`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data }),
@@ -122,11 +134,11 @@ export const saveResources = (id: string, data: string) =>
 
 /** Ask Pix to stop; the chat stream then ends normally with what was done. */
 export const stopChat = (id: string) =>
-  fetch(`/api/games/${id}/stop`, { method: "POST" }).then((r) => json<{ ok: boolean }>(r));
+  apiFetch(`/api/games/${id}/stop`, { method: "POST" }).then((r) => json<{ ok: boolean }>(r));
 
 /** Put the game back to a version (the one before a message). */
 export const undoTo = (id: string, commit: string) =>
-  fetch(`/api/games/${id}/undo`, {
+  apiFetch(`/api/games/${id}/undo`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ commit }),
@@ -134,11 +146,11 @@ export const undoTo = (id: string, commit: string) =>
 
 /** Delete a game folder for good (refused while Pix works on it). */
 export const deleteGame = (id: string) =>
-  fetch(`/api/games/${id}`, { method: "DELETE" }).then((r) => json<{ ok: boolean }>(r));
+  apiFetch(`/api/games/${id}`, { method: "DELETE" }).then((r) => json<{ ok: boolean }>(r));
 
 /** Import a zip made by "Exporter"; it becomes a new game. */
 export const importGame = (file: File) =>
-  fetch("/api/games/import", {
+  apiFetch("/api/games/import", {
     method: "POST",
     headers: { "Content-Type": "application/zip" },
     body: file,

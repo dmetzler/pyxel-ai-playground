@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteGame, importGame, streamChat } from "./api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createGame, deleteGame, importGame, streamChat } from "./api";
+import { setLang } from "./i18n";
 
 const done = { done: true, commit: "abc1234", code: "new", base_code: "old", resources: null, resources_changed: false };
 
@@ -16,6 +17,7 @@ function serve(chunks: string[], status = 200) {
 
 const sse = (...events: object[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
 
+beforeEach(() => setLang("fr"));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("streamChat", () => {
@@ -65,7 +67,7 @@ describe("manage games", () => {
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/games/import");
     expect(init.method).toBe("POST");
-    expect(init.headers).toEqual({ "Content-Type": "application/zip" });
+    expect(init.headers).toEqual({ "Content-Type": "application/zip", "X-Lang": "fr" });
     expect(init.body).toBe(file);
   });
 
@@ -78,9 +80,25 @@ describe("manage games", () => {
     const ok = reply(200, { ok: true });
     vi.stubGlobal("fetch", ok);
     expect(await deleteGame("mon-jeu")).toEqual({ ok: true });
-    expect(ok.mock.calls[0]).toEqual(["/api/games/mon-jeu", { method: "DELETE" }]);
+    expect(ok.mock.calls[0]).toEqual(["/api/games/mon-jeu", { method: "DELETE", headers: { "X-Lang": "fr" } }]);
 
     vi.stubGlobal("fetch", reply(409, { detail: "Pix travaille encore sur ce jeu." }));
     await expect(deleteGame("mon-jeu")).rejects.toThrow("Pix travaille encore sur ce jeu.");
+  });
+
+  it("sends the UI language and creates games in it", async () => {
+    setLang("pl");
+    const fetch = reply(200, { id: "gra", name: "Gra", lang: "pl" });
+    vi.stubGlobal("fetch", fetch);
+    await createGame("Gra", "code", []);
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual({ "Content-Type": "application/json", "X-Lang": "pl" });
+    expect(JSON.parse(init.body as string)).toEqual({ name: "Gra", code: "code", messages: [], lang: "pl" });
+  });
+
+  it("translates generic server errors", async () => {
+    setLang("en");
+    vi.stubGlobal("fetch", reply(500, {}));
+    await expect(deleteGame("x")).rejects.toThrow("Server error 500");
   });
 });

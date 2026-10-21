@@ -11,12 +11,12 @@ def test_turn_edits_with_tools_and_is_committed(client, games_dir, game, script)
     script([
         [("text", "Je lis ton code."), ("tool", "read", {"path": str(d / "game.py")})],
         [("tool", "write", {"path": str(d / "game.py"), "content": NEW_CODE})],
-        [("tool", "tester_jeu", {})],
+        [("tool", "test_game", {})],
         [("text", "Le fond est noir maintenant !")],
     ])
     events = chat(client, game, "Mets le fond en noir", code=STARTER)
 
-    assert [e["tool"] for e in events if "tool" in e] == ["read", "write", "tester_jeu"]
+    assert [e["tool"] for e in events if "tool" in e] == ["read", "write", "test_game"]
     assert "".join(e.get("delta", "") for e in events) == "Je lis ton code.Le fond est noir maintenant !"
     assert not [e for e in events if "error" in e]
     done = events[-1]
@@ -119,7 +119,7 @@ def test_stop_ends_the_running_turn(client, games_dir, game, script):
         [("text", "Je commence.")],
         [("text", "Jamais dit.")],
     ])
-    model.responses[0] = [("text", "Je commence."), ("tool", "tester_jeu", {})]
+    model.responses[0] = [("text", "Je commence."), ("tool", "test_game", {})]
     model.gates[0] = threading.Event()
     result: dict = {}
     worker = threading.Thread(target=lambda: result.update(events=chat(client, game, "long")))

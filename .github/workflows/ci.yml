@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 git
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          pip install -r requirements-dev.txt
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI User"
+
+      - name: Run pytest
+        run: |
+          cd backend
+          python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run tests
+        run: |
+          cd frontend
+          npm test
+
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+
+      - name: Lint Helm chart
+        run: |
+          helm lint charts/pyxel-ai-playground \
+            --set oauth2Proxy.clientId=x \
+            --set oauth2Proxy.clientSecret=y \
+            --set oauth2Proxy.cookieSecret=0123456789abcdef0123456789abcdef \
+            --set oauth2Proxy.issuerUrl=https://idp.example.com \
+            --set openai.apiKey=k

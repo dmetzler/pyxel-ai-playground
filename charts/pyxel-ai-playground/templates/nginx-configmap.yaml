@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pyxel.frontendName" . }}-nginx
+  labels:
+    {{- include "pyxel.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        root /usr/share/nginx/html;
+
+        location /api/ {
+            proxy_pass http://{{ include "pyxel.backendName" . }}:8000;
+            proxy_http_version 1.1;
+            # Tutor replies are streamed (server-sent events): don't buffer them.
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            # Resource files (res.pyxres) are uploaded as base64 JSON.
+            client_max_body_size 60m;
+        }
+
+        location / {
+            try_files $uri /index.html;
+        }
+    }

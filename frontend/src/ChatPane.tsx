@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { useI18n } from "./i18n";
 
 interface Bubble {
   role: "user" | "assistant";
@@ -8,7 +9,7 @@ interface Bubble {
   canUndo: boolean;
 }
 
-const IDEAS = ["Je veux créer un jeu de labyrinthe", "Un jeu de tir dans l'espace", "Un chat qui attrape des poissons"];
+const IDEAS = ["chat.idea1", "chat.idea2", "chat.idea3"] as const;
 
 export default function ChatPane(props: {
   messages: Bubble[];
@@ -18,6 +19,7 @@ export default function ChatPane(props: {
   onStop: () => void;
   onUndo: (index: number) => void;
 }) {
+  const { t } = useI18n();
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -33,28 +35,28 @@ export default function ChatPane(props: {
 
   return (
     <section className="pane chat">
-      <header className="pane-title">💬 Discussion</header>
+      <header className="pane-title">{t("chat.title")}</header>
       <div className="messages">
         {props.messages.map((m, i) => (
           <div key={i} className={`bubble ${m.role}`}>
             {m.text ? <ReactMarkdown>{m.text}</ReactMarkdown> : null}
             {m.activity && <div className="building">{m.activity}</div>}
-            {!m.text && !m.activity && props.busy && <div className="building">🤔 Je réfléchis…</div>}
+            {!m.text && !m.activity && props.busy && <div className="building">{t("chat.thinking")}</div>}
             {m.canUndo && (
-              <button className="undo" title="Remettre le jeu comme avant ce message" onClick={() => props.onUndo(i)}>
-                ↩️ Annuler
+              <button className="undo" title={t("chat.undoTitle")} onClick={() => props.onUndo(i)}>
+                {t("chat.undo")}
               </button>
             )}
           </div>
         ))}
         {props.messages.length === 1 && (
           <div className="ideas">
-            {IDEAS.map((idea) => (
-              <button key={idea} onClick={() => submit(idea)}>{idea}</button>
+            {IDEAS.map((key) => (
+              <button key={key} onClick={() => submit(t(key))}>{t(key)}</button>
             ))}
           </div>
         )}
-        {props.error && <div className="error">Oups, impossible de parler à Pix : {props.error}</div>}
+        {props.error && <div className="error">{t("chat.error", { error: props.error })}</div>}
         <div ref={endRef} />
       </div>
       <form
@@ -66,7 +68,7 @@ export default function ChatPane(props: {
       >
         <textarea
           value={input}
-          placeholder="Dis à Pix quoi construire ou changer…"
+          placeholder={t("chat.placeholder")}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -77,9 +79,9 @@ export default function ChatPane(props: {
           rows={2}
         />
         {props.busy ? (
-          <button type="button" className="stop" onClick={props.onStop}>⏹ Arrêter</button>
+          <button type="button" className="stop" onClick={props.onStop}>{t("chat.stop")}</button>
         ) : (
-          <button type="submit" disabled={!input.trim()}>Envoyer</button>
+          <button type="submit" disabled={!input.trim()}>{t("chat.send")}</button>
         )}
       </form>
     </section>

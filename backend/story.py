@@ -23,12 +23,13 @@ from pygments.lexers import PythonLexer
 from pygments.styles import get_style_by_name
 from weasyprint import HTML
 
+import i18n
+from i18n import t
+
 HERE = Path(__file__).parent
 RES_TOOL = HERE / "res_tool.py"
 APP_SHOT = HERE / "assets" / "app.png"
 
-MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
-          "août", "septembre", "octobre", "novembre", "décembre"]
 EXTRACT_MAX = 30  # lines of code shown per step
 LONG_BLOCK = 12  # fenced code blocks in Pix's answers longer than this are dropped
 # Emoji have no glyph in the PDF fonts: they would print as empty boxes.
@@ -102,9 +103,9 @@ def _data_uri(png: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(png).decode()
 
 
-def _figure(uri: str | None, caption: str, cls: str = "shot") -> str:
+def _figure(uri: str | None, caption: str, cls: str = "shot", lang: str = i18n.DEFAULT_LANG) -> str:
     if uri is None:
-        img = '<div class="noshot">Pas d\'image pour cette étape : le jeu ne démarrait pas encore.</div>'
+        img = f'<div class="noshot">{html.escape(t(lang, "story_noshot"))}</div>'
     else:
         img = f'<img class="{cls}" src="{uri}">'
     return f'<figure>{img}<figcaption>{html.escape(caption)}</figcaption></figure>'
@@ -156,12 +157,13 @@ def _code_table(rows: list[tuple[int | None, str, bool]], cls: str = "code") -> 
     return "".join(out)
 
 
-def _code_block(title: str, rows: list, cls: str = "code", legend: bool = False) -> str:
+def _code_block(title: str, rows: list, cls: str = "code", legend: bool = False,
+                lang: str = i18n.DEFAULT_LANG) -> str:
     """Title and the first lines kept together, so a page never ends on a lonely title."""
     head, rest = rows[:8], rows[8:]
     out = f'<div class="keep">{title}'
     if legend:
-        out += '<div class="legend"><span class="box"></span> nouveau ou modifié</div>'
+        out += f'<div class="legend"><span class="box"></span> {t(lang, "story_legend")}</div>'
     out += _code_table(head, cls) + "</div>"
     if rest:
         out += _code_table(rest, cls + " cont")
@@ -211,7 +213,7 @@ def _clean(text: str) -> str:
     return EMOJI_RE.sub("", text)
 
 
-def _answer_html(parts: list[str]) -> str:
+def _answer_html(parts: list[str], lang: str = i18n.DEFAULT_LANG) -> str:
     def drop_long(m: re.Match) -> str:
         return "" if m.group(1).count("\n") > LONG_BLOCK else m.group(0)
 
@@ -220,13 +222,10 @@ def _answer_html(parts: list[str]) -> str:
     text = FENCE_RE.sub(drop_long, text).strip()
     text = INLINE_FENCE_RE.sub(r"`\1`", text)
     if not text:
-        return "<p><em>Pix n'a pas eu le temps de répondre à cette étape.</em></p>"
+        return f"<p><em>{html.escape(t(lang, 'story_no_answer'))}</em></p>"
     return markdown.markdown(text, extensions=["fenced_code", "sane_lists"])
 
 
-def _french_date(d: datetime.date) -> str:
-    day = "1er" if d.day == 1 else str(d.day)
-    return f"{day} {MONTHS[d.month - 1]} {d.year}"
 
 
 # --- The document ------------------------------------------------------------
@@ -304,7 +303,9 @@ table.code tr { break-inside: avoid; }
 
 
 def build_story_pdf(d: Path) -> bytes:
-    name = json.loads((d / "meta.json").read_text(encoding="utf-8")).get("name", d.name)
+    meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    name = meta.get("name", d.name)
+    lang = i18n.norm_lang(meta.get("lang"))
     chat = d / "chat.json"
     messages = json.loads(chat.read_text(encoding="utf-8")) if chat.is_file() else []
     steps = _steps(d, messages)
@@ -320,70 +321,72 @@ def build_story_pdf(d: Path) -> bytes:
     final_shot = shots.get(head)
 
     e = html.escape
-    parts = [f'<html lang="fr"><head><meta charset="utf-8"><style>{CSS}</style></head><body>']
+
+    def tx(key: str, **kwargs) -> str:
+        return e(t(lang, key, **kwargs))
+
+    css = CSS.replace('content: "page "', f'content: "{t(lang, "story_page")} "')
+    parts = [f'<html lang="{lang}"><head><meta charset="utf-8"><style>{css}</style></head><body>']
 
     # Cover
     parts.append('<section class="cover">')
-    parts.append('<div class="kicker">Mon carnet de création de jeu</div>')
+    parts.append(f'<div class="kicker">{tx("story_kicker")}</div>')
     parts.append(f'<h1 class="gamename">{e(_clean(name))}</h1>')
-    parts.append(f'<div class="date">{_french_date(datetime.date.today())}</div>')
+    parts.append(f'<div class="date">{i18n.format_date(lang, datetime.date.today())}</div>')
     if APP_SHOT.is_file():
-        parts.append(_figure(_data_uri(APP_SHOT.read_bytes()),
-                             "L'atelier : à gauche, je discute avec Pix, mon assistant ; à droite, "
-                             "je vois mon jeu, son code et ses dessins.", cls="app"))
+        parts.append(_figure(_data_uri(APP_SHOT.read_bytes()), t(lang, "story_app_caption"),
+                             cls="app", lang=lang))
     if final_shot:
-        parts.append(_figure(final_shot, "Mon jeu à la fin de la séance.", cls="final"))
+        parts.append(_figure(final_shot, t(lang, "story_final_caption"), cls="final", lang=lang))
     parts.append("</section>")
 
     # Steps
-    parts.append('<h1 class="chapter">Ce que nous avons fait</h1>')
+    parts.append(f'<h1 class="chapter">{tx("story_chapter_steps")}</h1>')
     if not steps:
-        parts.append('<p class="intro">Ce jeu n\'a pas encore d\'histoire : demande quelque chose à Pix '
-                     'et chaque étape apparaîtra ici, avec le code qui a changé.</p>')
+        parts.append(f'<p class="intro">{tx("story_no_steps")}</p>')
     else:
-        parts.append(f'<p class="intro">Le jeu a été construit en {len(steps)} étape'
-                     f'{"s" if len(steps) > 1 else ""}. À chaque fois, tu as demandé quelque chose à Pix, '
-                     "il a modifié le programme et t'a expliqué ce qu'il faisait. Les lignes "
-                     "<b>surlignées en vert</b> sont celles qui ont été ajoutées ou changées.</p>")
+        word = t(lang, "story_step_many" if len(steps) > 1 else "story_step_one")
+        # This string holds markup (<b>), so it is not escaped.
+        parts.append(f'<p class="intro">{t(lang, "story_intro_steps", n=len(steps), steps=word)}</p>')
     for n, s in enumerate(steps, 1):
         cls = "step" if n > 1 else "step first"
         parts.append(f'<section class="{cls}"' + (' style="break-before:auto"' if n == 1 else "") + ">")
-        parts.append(f'<h2><span class="num">Étape {n}</span></h2>')
-        parts.append(f'<div class="ask"><span class="who">Tu as demandé</span>{e(_clean(s["ask"]))}</div>')
-        parts.append(f'<div class="pix"><span class="who">Pix t\'a expliqué</span>{_answer_html(s["answer"])}</div>')
-        parts.append(_figure(shots.get(s["after"]), f"Le jeu après l'étape {n}."))
+        parts.append(f'<h2><span class="num">{tx("story_step", n=n)}</span></h2>')
+        parts.append(f'<div class="ask"><span class="who">{tx("story_you_asked")}</span>{e(_clean(s["ask"]))}</div>')
+        parts.append(f'<div class="pix"><span class="who">{tx("story_pix_explained")}</span>'
+                     f'{_answer_html(s["answer"], lang)}</div>')
+        parts.append(_figure(shots.get(s["after"]), t(lang, "story_after_step", n=n), lang=lang))
         before = _show(d, s["before"], "game.py") if s["before"] else None
         after = _show(d, s["after"], "game.py") if s["after"] else None
-        title = f'<h3 class="sub">Le code de cette étape</h3>'
+        title = f'<h3 class="sub">{tx("story_step_code")}</h3>'
         rows = _extract((before or b"").decode("utf-8", "replace"),
                         after.decode("utf-8", "replace")) if after is not None else None
         if rows:
-            parts.append(_code_block(title, rows, legend=True))
+            parts.append(_code_block(title, rows, legend=True, lang=lang))
         else:
-            parts.append(title + '<p class="nochange">Pas de changement dans le code à cette étape.</p>')
+            parts.append(title + f'<p class="nochange">{tx("story_no_change")}</p>')
         parts.append("</section>")
 
     # Full code
-    parts.append('<h1 class="chapter">Le code complet de ton jeu</h1>')
-    parts.append(f'<p class="intro">Voici tout le programme <b>game.py</b> ({len(final_code.splitlines())} lignes). '
-                 "Tu peux le recopier ou le retrouver dans le fichier exporté.</p>")
+    parts.append(f'<h1 class="chapter">{tx("story_chapter_code")}</h1>')
+    parts.append(f'<p class="intro">{t(lang, "story_code_intro", lines=len(final_code.splitlines()))}</p>')
     lines = _highlight_lines(final_code.rstrip("\n"))
-    parts.append(_code_block("", [(i + 1, src, False) for i, src in enumerate(lines)], cls="code full"))
+    parts.append(_code_block("", [(i + 1, src, False) for i, src in enumerate(lines)], cls="code full", lang=lang))
 
-    # At home
-    parts.append('<section class="home"><h1 class="chapter">Pour continuer à la maison</h1>')
-    parts.append("<ol><li>Installe Python (sur <b>python.org</b>), puis Pyxel en tapant dans un terminal :"
+    # At home (these strings hold markup, so they are not escaped)
+    parts.append(f'<section class="home"><h1 class="chapter">{tx("story_chapter_home")}</h1>')
+    parts.append(f"<ol><li>{t(lang, 'story_home_install')}"
                  "<pre>pip install pyxel</pre></li>"
-                 "<li>Mets ton programme dans un fichier <b>game.py</b>"
-                 + (" et le fichier de dessins et de sons <b>res.pyxres</b> dans le même dossier" if has_res else "")
-                 + ". Le bouton <b>Exporter</b> de l'atelier te donne tout dans un fichier zip.</li>"
-                 "<li>Lance ton jeu :<pre>pyxel run game.py</pre></li>"
-                 + ("<li>Pour modifier les dessins et les sons :<pre>pyxel edit res.pyxres</pre></li>" if has_res else "")
+                 f"<li>{t(lang, 'story_home_file')}"
+                 + (t(lang, "story_home_res") if has_res else "")
+                 + f"{t(lang, 'story_home_export')}</li>"
+                 f"<li>{t(lang, 'story_home_run')}<pre>pyxel run game.py</pre></li>"
+                 + (f"<li>{t(lang, 'story_home_edit')}<pre>pyxel edit res.pyxres</pre></li>" if has_res else "")
                  + "</ol>")
-    parts.append('<div class="tip"><b>Quelques idées pour aller plus loin :</b><ul>'
-                 "<li>Change une couleur ou une vitesse, relance le jeu et regarde ce qui se passe.</li>"
-                 "<li>Ajoute un écran « Partie terminée » avec ton score.</li>"
-                 "<li>Rends le jeu de plus en plus difficile au fil du temps.</li>"
-                 "</ul>Le plus important : essaie, casse, répare. C'est comme ça qu'on apprend à programmer !</div>")
+    parts.append(f'<div class="tip"><b>{tx("story_tip_title")}</b><ul>'
+                 f"<li>{tx('story_tip_1')}</li>"
+                 f"<li>{tx('story_tip_2')}</li>"
+                 f"<li>{tx('story_tip_3')}</li>"
+                 f"</ul>{tx('story_tip_end')}</div>")
     parts.append("</section></body></html>")
     return HTML(string="".join(parts), base_url=str(HERE)).write_pdf()

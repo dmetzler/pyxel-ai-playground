@@ -1,0 +1,16 @@
+apiVersion: v2
+name: pyxel-ai-playground
+description: Pyxel AI Playground - kids build retro Pyxel games by chatting with Pix, an AI tutor. Served behind oauth2-proxy.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/dmetzler/pyxel-ai-playground
+sources:
+  - https://github.com/dmetzler/pyxel-ai-playground
+keywords:
+  - pyxel
+  - education
+  - ai
+  - oauth2-proxy
+annotations:
+  artifacthub.io/license: Apache-2.0

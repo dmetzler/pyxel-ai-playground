@@ -29,6 +29,8 @@ body {
 .picker { height: 100%; display: flex; justify-content: center; align-items: flex-start; padding: 40px 12px; overflow-y: auto; }
 .picker-card { width: min(640px, 100%); padding: 20px 28px; }
 .picker-card h1 { margin: 0 0 8px; }
+.picker-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lang-select { font: inherit; font-size: 15px; padding: 4px 8px; border: 2px solid #222; border-radius: 12px; background: #fff; cursor: pointer; }
 .picker-card h2 { font-size: 20px; margin: 20px 0 8px; }
 .new-game { display: flex; gap: 8px; }
 .new-game input { flex: 1; font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid #222; border-radius: 12px; }

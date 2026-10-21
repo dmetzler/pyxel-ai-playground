@@ -1,0 +1,22 @@
+Pyxel AI Playground {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}".
+
+{{- if .Values.ingress.enabled }}
+
+Open: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+
+No Ingress. Port-forward the frontend Service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "pyxel.frontendName" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080/
+{{- end }}
+{{- if .Values.auth.enabled }}
+
+Authentication: oauth2-proxy ({{ .Values.oauth2Proxy.provider }}) against {{ .Values.oauth2Proxy.issuerUrl }}
+  Register this redirect URI at your IdP: {{ include "pyxel.redirectUrl" . }}
+  oauth2-proxy sets --cookie-secure=true: serve the app over HTTPS.
+{{- else }}
+
+WARNING: auth.enabled=false - the app is NOT protected. Use for local tests only.
+{{- end }}
+
+Games are stored under /games on PVC "{{ include "pyxel.pvcName" . }}"{{ if not .Values.persistence.enabled }} (persistence disabled: emptyDir, data is lost on restart){{ end }}.

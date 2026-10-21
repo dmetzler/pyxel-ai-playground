@@ -1,0 +1,132 @@
+{{- $o := .Values.oauth2Proxy -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pyxel.frontendName" . }}
+  labels:
+    {{- include "pyxel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "pyxel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pyxel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
+      annotations:
+        checksum/nginx: {{ include (print $.Template.BasePath "/nginx-configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: nginx
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: {{ if .Values.auth.enabled }}nginx{{ else }}http{{ end }}
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 20
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          {{- with .Values.frontend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- if .Values.auth.enabled }}
+        - name: oauth2-proxy
+          image: "{{ $o.image.repository }}:{{ $o.image.tag }}"
+          imagePullPolicy: {{ $o.image.pullPolicy }}
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://127.0.0.1:80
+            - --provider={{ $o.provider }}
+            - --oidc-issuer-url={{ required "oauth2Proxy.issuerUrl is required when auth.enabled=true" $o.issuerUrl }}
+            - --redirect-url={{ include "pyxel.redirectUrl" . }}
+            - --scope={{ $o.scopes }}
+            {{- range $o.emailDomains }}
+            - --email-domain={{ . }}
+            {{- end }}
+            {{- range $o.allowedGroups }}
+            - --allowed-group={{ . }}
+            {{- end }}
+            - --cookie-secure=true
+            - --reverse-proxy=true
+            - --skip-provider-button=true
+            - --flush-interval=100ms
+            - --upstream-timeout=300s
+            {{- range $o.extraArgs }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pyxel.oauthSecretName" . }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pyxel.oauthSecretName" . }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pyxel.oauthSecretName" . }}
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 20
+          {{- with $o.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ include "pyxel.frontendName" . }}-nginx
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

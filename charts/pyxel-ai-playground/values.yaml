@@ -1,0 +1,127 @@
+# Default values for pyxel-ai-playground.
+#
+# Topology:
+#   Ingress -> Service (port "http") -> frontend pod
+#     [oauth2-proxy sidecar :4180] -> [nginx :80, SPA + /api proxy] -> backend Service :8000
+# Set auth.enabled=false to drop the sidecar (local tests only: the app is then unauthenticated).
+
+nameOverride: ""
+fullnameOverride: ""
+
+auth:
+  # When true, oauth2-proxy runs as a sidecar in the frontend pod and the Service targets it.
+  enabled: true
+
+# --- OpenAI-compatible LLM endpoint (e.g. LiteLLM) used by the Pix tutor ---
+openai:
+  # Base URL of the OpenAI-compatible endpoint (LITELLM_BASE_URL).
+  baseUrl: "http://litellm:4000"
+  # API key for the endpoint (LITELLM_API_KEY). Required unless openai.existingSecret is set.
+  apiKey: ""
+  # Model id passed to the endpoint (LITELLM_MODEL).
+  model: "claude-3-5-sonnet"
+  # Name of an existing Secret holding the API key under key "api-key".
+  # When set, openai.apiKey is ignored and no API key is rendered into the chart Secret.
+  existingSecret: ""
+
+# Max tokens per tutor reply (PIX_MAX_TOKENS).
+maxTokens: 16000
+
+# --- oauth2-proxy sidecar (only used when auth.enabled=true) ---
+oauth2Proxy:
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.15.5
+    pullPolicy: IfNotPresent
+  # oauth2-proxy provider: oidc (default), google, github, keycloak-oidc, ...
+  provider: oidc
+  # OIDC issuer URL of the identity provider (required), e.g.
+  #   Keycloak: https://keycloak.example.com/realms/<realm>
+  #   Google:   https://accounts.google.com
+  issuerUrl: ""
+  # OAuth client id registered at the IdP (required).
+  clientId: ""
+  # OAuth client secret registered at the IdP (required).
+  clientSecret: ""
+  # Cookie encryption secret, 16/24/32 bytes (required). Generate with:
+  #   openssl rand -base64 32 | tr -- '+/' '-_' | head -c 32
+  cookieSecret: ""
+  # Name of an existing Secret with keys "client-id", "client-secret", "cookie-secret".
+  # When set, clientId/clientSecret/cookieSecret above are ignored.
+  existingSecret: ""
+  # OAuth scopes requested from the IdP.
+  scopes: "openid email profile"
+  # Allowed e-mail domains (--email-domain). "*" allows every authenticated user.
+  emailDomains:
+    - "*"
+  # Restrict access to members of these IdP groups (--allowed-group). Empty = no restriction.
+  allowedGroups: []
+  # OAuth callback URL. Empty = https://<ingress.host>/oauth2/callback.
+  redirectUrl: ""
+  # Extra oauth2-proxy command-line flags, e.g. ["--cookie-expire=12h"].
+  extraArgs: []
+  resources: {}
+  #  requests: {cpu: 10m, memory: 32Mi}
+  #  limits: {memory: 128Mi}
+
+# --- Backend (FastAPI, Pix agent, git-backed game storage) ---
+backend:
+  image:
+    repository: ghcr.io/dmetzler/pyxel-ai-playground-backend
+    # Defaults to .Chart.AppVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Extra environment variables: [{name: FOO, value: bar}]
+  extraEnv: []
+  resources: {}
+  #  requests: {cpu: 100m, memory: 256Mi}
+  #  limits: {memory: 1Gi}
+  # The backend keeps games on a ReadWriteOnce volume: it always runs 1 replica with a Recreate strategy.
+
+# --- Frontend (nginx serving the SPA and proxying /api to the backend) ---
+frontend:
+  image:
+    repository: ghcr.io/dmetzler/pyxel-ai-playground-frontend
+    # Defaults to .Chart.AppVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources: {}
+  #  requests: {cpu: 10m, memory: 32Mi}
+  #  limits: {memory: 128Mi}
+
+# Games are stored as git repositories under /games on this volume.
+persistence:
+  enabled: true
+  size: 5Gi
+  # Storage class; empty = cluster default.
+  storageClass: ""
+  # Use an existing PVC instead of creating one.
+  existingClaim: ""
+  accessModes:
+    - ReadWriteOnce
+
+service:
+  type: ClusterIP
+  # Port exposed by the frontend Service (named "http").
+  port: 4180
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  # Defaults suit ingress-nginx: no buffering for streamed tutor replies, 60m uploads.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "60m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  # TLS: [{secretName: pyxel-tls, hosts: [pyxel.example.com]}]
+  tls: []
+
+imagePullSecrets: []
+podAnnotations: {}
+# Pod-level security context applied to both pods (e.g. {fsGroup: 1000}).
+podSecurityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

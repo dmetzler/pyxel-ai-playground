@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatMessage, ChatResult, createGame, exportUrl, loadGame, saveGame, saveResources, stopChat, storyPdfUrl, streamChat, undoTo } from "./api";
+import { ChatMessage, ChatResult, apiFetch, createGame, exportUrl, loadGame, saveGame, saveResources, stopChat, storyPdfUrl, streamChat, undoTo } from "./api";
 import { chatText } from "./parse";
-import { STARTER_CODE, WELCOME_MESSAGE } from "./starter";
+import { STARTER_CODES, WELCOME_MESSAGES } from "./starter";
+import { useI18n } from "./i18n";
+import LanguageSelect from "./LanguageSelect";
 import ChatPane from "./ChatPane";
 import GamePicker from "./GamePicker";
 import RightPane from "./RightPane";
@@ -12,9 +14,10 @@ interface OpenGame {
 }
 
 export default function App() {
+  const { lang, t } = useI18n();
   const [game, setGame] = useState<OpenGame | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [code, setCode] = useState(STARTER_CODE);
+  const [code, setCode] = useState(() => STARTER_CODES[lang]);
   // game.py before the last commit, to color what it changed in the editor.
   const [baseCode, setBaseCode] = useState<string | null>(null);
   // The game's res.pyxres (sprites, tilemaps, sounds) as base64, or null.
@@ -110,9 +113,10 @@ export default function App() {
   }, [openFromUrl]);
 
   const onCreate = async (name: string) => {
-    const welcome: ChatMessage[] = [{ role: "assistant", content: WELCOME_MESSAGE }];
-    const g = await createGame(name, STARTER_CODE, welcome);
-    open(g, STARTER_CODE, welcome, null);
+    const starter = STARTER_CODES[lang];
+    const welcome: ChatMessage[] = [{ role: "assistant", content: WELCOME_MESSAGES[lang] }];
+    const g = await createGame(name, starter, welcome, lang);
+    open(g, starter, welcome, null);
     showGame(g.id);
   };
 
@@ -139,7 +143,7 @@ export default function App() {
   const undo = async (i: number) => {
     const commit = messages[i]?.commit;
     if (!game || busy || !commit) return;
-    if (!confirm("Annuler ce message ? Le jeu reviendra comme il était juste avant, et la suite de la discussion sera effacée.")) return;
+    if (!confirm(t("app.undoConfirm"))) return;
     try {
       const r = await undoTo(game.id, commit);
       setMessages(messages.slice(0, i));
@@ -218,12 +222,12 @@ export default function App() {
     setPdfBusy(true);
     setPdfError(null);
     try {
-      const res = await fetch(storyPdfUrl(game.id));
-      if (!res.ok) throw new Error(`erreur du serveur ${res.status}`);
+      const res = await apiFetch(storyPdfUrl(game.id));
+      if (!res.ok) throw new Error(t("server.error", { status: res.status }));
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${game.id}-histoire.pdf`;
+      a.download = `${game.id}-${t("top.storyFile")}.pdf`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (e) {
@@ -236,7 +240,7 @@ export default function App() {
   const askToFix = () => {
     if (!gameError) return;
     send(
-      "Mon jeu affiche cette erreur, tu peux m'aider à la réparer ?\n\n" +
+      t("app.askFix") + "\n\n" +
         gameError.slice(0, 1500),
     );
   };
@@ -244,26 +248,27 @@ export default function App() {
   return (
     <div className="shell">
       <div className="topbar">
-        <button disabled={busy} onClick={() => { setGame(null); showGame(null); }}>📂 Mes jeux</button>
+        <button disabled={busy} onClick={() => { setGame(null); showGame(null); }}>{t("top.myGames")}</button>
         <strong>{game.name}</strong>
         <span className={`save ${saveState}`}>
-          {saveState === "saved" ? "✔ Sauvegardé" : saveState === "saving" ? "Sauvegarde…" : "⚠ Pas sauvegardé"}
+          {saveState === "saved" ? t("top.saved") : saveState === "saving" ? t("top.saving") : t("top.notSaved")}
         </span>
         <span className="spacer" />
-        <a className="button" href={exportUrl(game.id)} download title="Télécharger le jeu dans un fichier zip">
-          📦 Exporter
+        <LanguageSelect />
+        <a className="button" href={exportUrl(game.id)} download title={t("top.exportTitle")}>
+          {t("top.export")}
         </a>
-        <button disabled={pdfBusy} onClick={downloadStory} title="Le livret de ton jeu, à imprimer ou à garder">
-          {pdfBusy ? "Je prépare ton livret…" : "📖 Mon histoire (PDF)"}
+        <button disabled={pdfBusy} onClick={downloadStory} title={t("top.storyTitle")}>
+          {pdfBusy ? t("top.storyBusy") : t("top.story")}
         </button>
       </div>
-      {pdfError && <div className="error topbar-error">Oups, impossible de créer le livret : {pdfError}</div>}
+      {pdfError && <div className="error topbar-error">{t("top.storyError", { error: pdfError })}</div>}
       <div className="app">
         <ChatPane
           messages={messages.map((m, i) => ({
             role: m.role,
             ...(m.role === "assistant"
-              ? chatText(m.content, busy && i === messages.length - 1 ? activity : null)
+              ? chatText(m.content, busy && i === messages.length - 1 ? activity : null, lang)
               : { text: m.content, activity: null }),
             canUndo: m.role === "user" && !!m.commit && !busy,
           }))}

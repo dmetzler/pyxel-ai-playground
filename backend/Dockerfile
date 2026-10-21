@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py pix_agent.py res_tool.py story.py prompt_fr.md ./
+COPY app.py i18n.py pix_agent.py res_tool.py story.py prompt_*.md ./
 COPY assets ./assets
 
 ENV GAMES_DIR=/games

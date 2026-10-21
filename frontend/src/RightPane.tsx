@@ -3,6 +3,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { buildEditorDocument, buildPyxelDocument } from "./pyxelFrame";
 import { changeGutter } from "./changeGutter";
+import { useI18n } from "./i18n";
 
 export default function RightPane(props: {
   code: string;
@@ -17,6 +18,7 @@ export default function RightPane(props: {
   onAskFix: () => void;
   onReloadResources: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<"preview" | "code" | "sprites">("preview");
   // The editor is only started the first time the tab is opened, then kept
   // alive (hidden) so switching tabs doesn't lose the drawing in progress.
@@ -36,10 +38,10 @@ export default function RightPane(props: {
     <section className="pane right">
       <header className="pane-title tabs">
         <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
-          🎮 Aperçu
+          {t("right.preview")}
         </button>
         <button className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>
-          📝 Code
+          {t("right.code")}
         </button>
         <button
           className={tab === "sprites" ? "active" : ""}
@@ -51,7 +53,7 @@ export default function RightPane(props: {
             }
           }}
         >
-          🎨 Sprites
+          {t("right.sprites")}
         </button>
         <span className="spacer" />
         <button
@@ -61,25 +63,25 @@ export default function RightPane(props: {
             setTab("preview");
           }}
         >
-          ▶ Lancer
+          {t("right.run")}
         </button>
       </header>
       <div className="right-body">
         <div className="preview" style={{ display: tab === "preview" ? "flex" : "none" }}>
           <iframe
             key={props.runId}
-            title="Jeu Pyxel"
+            title={t("right.gameFrame")}
             srcDoc={doc}
             sandbox="allow-scripts allow-same-origin"
             allow="autoplay; gamepad"
           />
-          <p className="hint">Clique sur le jeu, puis utilise le clavier pour jouer !</p>
+          <p className="hint">{t("right.playHint")}</p>
         </div>
         <div className="code" style={{ display: tab === "code" ? "block" : "none" }}>
           <p className="hint">
-            Voici le vrai code de ton jeu. Tu peux le modifier, puis appuyer sur ▶ Lancer. Pix verra tes changements !
+            {t("right.codeHint")}
             <span className="legend">
-              <i className="added" /> ajouté <i className="changed" /> modifié <i className="deleted" /> effacé (au dernier changement)
+              <i className="added" /> {t("right.added")} <i className="changed" /> {t("right.changed")} <i className="deleted" /> {t("right.deleted")}
             </span>
           </p>
           <CodeMirror
@@ -92,25 +94,24 @@ export default function RightPane(props: {
         </div>
         <div className="sprites" style={{ display: tab === "sprites" ? "flex" : "none" }}>
           <p className="hint">
-            Dessine ou modifie tes personnages, décors et musiques ici (Pix peut aussi en créer pour toi). Clique sur
-            la 💾 disquette en haut de l'éditeur pour enregistrer, sinon tes changements seront perdus !
+            {t("right.spritesHint")}
             <button
               className="reload"
-              title="Recharger les dessins et les sons enregistrés (ce qui n'est pas enregistré sera perdu)"
+              title={t("right.reloadTitle")}
               onClick={() => props.onReloadResources()}
             >
-              🔄 Recharger
+              {t("right.reload")}
             </button>
           </p>
           {editorDoc && (
-            <iframe key={props.editorVersion} title="Éditeur de sprites Pyxel" srcDoc={editorDoc} sandbox="allow-scripts allow-same-origin" />
+            <iframe key={props.editorVersion} title={t("right.editorFrame")} srcDoc={editorDoc} sandbox="allow-scripts allow-same-origin" />
           )}
         </div>
         {props.gameError && tab !== "sprites" && (
           <div className="game-error">
-            <strong>🐞 Ton jeu a un bug.</strong>
+            <strong>{t("right.bug")}</strong>
             <pre>{props.gameError}</pre>
-            <button onClick={props.onAskFix}>Demander à Pix de le réparer</button>
+            <button onClick={props.onAskFix}>{t("right.askFix")}</button>
           </div>
         )}
       </div>

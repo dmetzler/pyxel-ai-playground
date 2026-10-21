@@ -15,8 +15,16 @@ from strands.sandbox.not_a_sandbox_local_environment import NotASandboxLocalEnvi
 from strands.tools.decorator import tool
 from strands_harness import create_harness
 
+import i18n
+
 BACKEND_DIR = Path(__file__).parent
 PROMPT = (BACKEND_DIR / "prompt_fr.md").read_text(encoding="utf-8")
+
+
+def load_prompt(lang: str) -> str:
+    """Pix's system prompt for `lang` (prompt_<lang>.md), French when that file is missing."""
+    f = BACKEND_DIR / f"prompt_{i18n.norm_lang(lang)}.md"
+    return f.read_text(encoding="utf-8") if f.is_file() else PROMPT
 RES_FILE = "res.pyxres"
 SESSION_DIR = ".pix"  # inside each game folder: the agent's saved conversation
 
@@ -66,7 +74,7 @@ def _game_tools(game_dir: Path) -> list:
     res = game_dir / RES_FILE
 
     @tool
-    async def modifier_ressources(script: str) -> str:
+    async def edit_resources(script: str) -> str:
         """Run a Python script with headless Pyxel on the game's res.pyxres and save the result.
 
         The existing res.pyxres is loaded first, so anything the script does not touch is kept.
@@ -93,7 +101,7 @@ def _game_tools(game_dir: Path) -> list:
         return "res.pyxres enregistré. Contenu maintenant :\n" + out
 
     @tool
-    async def voir_ressources() -> str:
+    async def view_resources() -> str:
         """Describe what is in the game's res.pyxres: sprites pixel by pixel, tilemaps, sounds, musics.
 
         The kid may have changed them in the Sprites tab, so look before changing them.
@@ -104,7 +112,7 @@ def _game_tools(game_dir: Path) -> list:
         return out if ok else "ERREUR : " + out
 
     @tool
-    async def tester_jeu() -> str:
+    async def test_game() -> str:
         """Run game.py headless for about 2 seconds of frames (no keys pressed) and report any crash.
 
         Use it after every change to game.py or res.pyxres, and fix the code until it says OK.
@@ -112,7 +120,7 @@ def _game_tools(game_dir: Path) -> list:
         ok, out = await run_res_tool("check", str(game_dir / "game.py"), cwd=game_dir)
         return out if ok else "LE JEU PLANTE :\n" + out
 
-    return [modifier_ressources, voir_ressources, tester_jeu]
+    return [edit_resources, view_resources, test_game]
 
 
 def make_model() -> OpenAIModel:
@@ -127,12 +135,10 @@ def make_model() -> OpenAIModel:
     )
 
 
-def make_agent(game_dir: Path):
+def make_agent(game_dir: Path, lang: str = i18n.DEFAULT_LANG):
     game_dir = game_dir.resolve()
-    instructions = PROMPT + (
-        f"\n\n## Les fichiers de CE jeu\n"
-        f"- Le code : `{game_dir / 'game.py'}`\n"
-        f"- Les ressources : `{game_dir / RES_FILE}` (avec les outils `voir_ressources` et `modifier_ressources`)\n"
+    instructions = load_prompt(lang) + i18n.t(
+        lang, "agent_files", code=game_dir / "game.py", res=game_dir / RES_FILE
     )
     return create_harness(
         model=make_model(),
