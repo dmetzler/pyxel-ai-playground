@@ -10,10 +10,15 @@ Run as a subprocess by app.py (so a buggy script can't take the server down):
     python res_tool.py check <game_file>
         Run the game headless for a few frames to catch crashes.
 """
+import os
 import sys
 from pathlib import Path
 
-import pyxel
+# Headless servers (CI, Docker) have no sound card: without this, Pyxel prints
+# "Failed to initialize audio device" on stdout, mixed into our output.
+os.environ["SDL_AUDIODRIVER"] = "dummy"
+
+import pyxel  # noqa: E402
 
 HEX = "0123456789abcdef"
 CELL = 16  # sprites are laid out on a 16x16 grid in the image banks
