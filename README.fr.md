@@ -11,7 +11,7 @@ Une application web où des collégiens créent un jeu rétro avec le moteur [Py
 
 *Une session en cours : le jeu « Le Serpent » prend forme. À gauche, la discussion avec Pix. À droite, l'aperçu du jeu en direct.*
 
-## Pourquoi {#pourquoi}
+## Pourquoi
 
 Ce projet est un outil pour les enseignants. Il sert à montrer aux élèves, dès le collège (vers 11 ans), comment on construit un logiciel aujourd'hui : **avec un agent IA**.
 
@@ -25,9 +25,9 @@ C'est un outil de classe ou d'atelier. Une séance typique ressemble à ceci :
 4. Quand une idée ne marche pas, un clic sur **Annuler** revient à la version d'avant.
 5. En fin de séance, l'élève repart avec son jeu en zip et le livret PDF de sa création.
 
-## Fonctionnalités {#fonctionnalites}
+## Fonctionnalités
 
-### Les points forts {#points-forts}
+### Les points forts
 
 - **Plusieurs jeux par élève.** L'écran d'accueil permet de créer un jeu, d'en rouvrir un ancien ou de le supprimer (avec confirmation, et refusé pendant que Pix y travaille). Chaque jeu a son adresse (`http://localhost:8080/serpent/`), donc on peut le mettre en favori ou rafraîchir la page sans le perdre.
 - **Chaque jeu est un dépôt git.** Avant chaque tour de Pix, les modifications de l'élève sont enregistrées, puis celles de Pix. Le bouton **Annuler** sur un message de l'élève remet le jeu (code, ressources et mémoire de Pix) dans l'état d'avant et efface la suite de la discussion. L'annulation est elle-même un nouveau commit : rien n'est jamais perdu, `git log` dans le dossier du jeu montre tout.
@@ -35,7 +35,7 @@ C'est un outil de classe ou d'atelier. Une séance typique ressemble à ceci :
 - **« Mon histoire » : un livret PDF de la création.** Le bouton **Mon histoire (PDF)** génère un livret que l'élève emporte chez lui (`backend/story.py`, WeasyPrint) : une couverture avec une capture de l'application et du jeu terminé, une page par message de l'élève (ce qu'il a demandé, l'explication de Pix, une capture du jeu après l'étape, les lignes de code ajoutées ou modifiées en vert), le code final complet, et la marche à suivre pour installer Pyxel et continuer à la maison. Chaque capture vient de l'exécution du `game.py` de ce commit, sans écran, pendant 30 images (`res_tool.py screenshot`).
 - **Trois langues : français, anglais, polonais.** L'interface, le tuteur et le PDF existent en `fr`, `en` et `pl`. Un sélecteur de langue se trouve sur l'écran d'accueil et dans la barre du haut d'un jeu. Chaque jeu garde la langue dans laquelle il a été créé : c'est elle qui fixe la langue de Pix, des messages de commit et du livret PDF.
 
-### Et aussi {#et-aussi}
+### Et aussi
 
 - **Aperçu en direct.** Le vrai Pyxel tourne dans le navigateur (Pyodide et la roue Pyxel), dans un iframe isolé. Le jeu se recharge à la fin de chaque tour de Pix.
 - **Onglet Code avec marge des changements.** L'élève lit et modifie `game.py`. Une fine marge colorée marque les lignes ajoutées (vert), modifiées (jaune) ou supprimées (rouge) par le dernier commit, pour voir ce que Pix vient de faire. Le code affiché est enregistré avant chaque message, et Pix doit le relire avant de s'en servir.
@@ -43,7 +43,7 @@ C'est un outil de classe ou d'atelier. Une séance typique ressemble à ceci :
 - **Pix dessine et teste.** L'outil `edit_resources` exécute un petit script Python avec Pyxel sans écran (`backend/res_tool.py`, limite de 20 s, sur une copie : si le script échoue, le fichier reste intact et Pix reçoit l'erreur pour corriger). Il dessine des sprites pixel par pixel, compose des tilemaps, écrit sons et musiques dans `res.pyxres`, que l'élève retouche ensuite dans l'onglet Sprites. `view_resources` donne à Pix une description du fichier actuel, donc les retouches de l'élève sont conservées. `test_game` lance le jeu 60 images et renvoie le plantage éventuel.
 - **Bouton Arrêter.** Il coupe Pix en plein tour. Ce qu'il a déjà fait est gardé et enregistré.
 
-## Comment ça marche {#fonctionnement}
+## Comment ça marche
 
 - **Frontend** (`frontend/`) : Vite, React et TypeScript. À gauche, la discussion avec Pix. À droite, les onglets Aperçu, Code et Sprites.
 - **Backend** (`backend/`) : FastAPI. Pix est un agent [Strands harness](https://strandsagents.com/docs/user-guide/harness/) (`backend/pix_agent.py`) dont le modèle est un endpoint compatible OpenAI, typiquement [LiteLLM](https://docs.litellm.ai/). La clé d'API n'arrive jamais dans le navigateur.
@@ -51,7 +51,7 @@ C'est un outil de classe ou d'atelier. Une séance typique ressemble à ceci :
 - **Sécurité.** Les outils de fichiers sont limités au dossier du jeu (`GameFolderSandbox`) et il n'y a pas de shell. La conversation de Pix, appels d'outils compris, est conservée dans `games/<nom>/.pix/` : elle reprend là où elle s'était arrêtée après un redémarrage.
 - **Stockage.** Chaque jeu est un dossier `games/<nom>/` (et un dépôt git) avec `game.py` (aussi exécutable avec Pyxel de bureau : `pyxel run games/<nom>/game.py`), `chat.json`, `meta.json` (dont la langue du jeu) et `res.pyxres` dès que l'élève a dessiné. Pour les ranger ailleurs, définissez `GAMES_DIR`.
 
-## Démarrage rapide avec Docker {#docker}
+## Démarrage rapide avec Docker
 
 ```bash
 cp backend/.env.example backend/.env   # renseignez LITELLM_API_KEY et LITELLM_MODEL
@@ -64,7 +64,7 @@ Ouvrez ensuite http://localhost:8080 (changez le port avec `PORT=9000 docker com
 - `backend` : FastAPI et Pyxel sans écran. Les jeux sont stockés dans `./games` sur votre disque (volume monté).
 - LiteLLM est attendu sur la machine hôte : par défaut, le backend appelle `http://host.docker.internal:4001`. Si LiteLLM tourne ailleurs, définissez `LITELLM_BASE_URL` dans votre shell ou dans un fichier `.env` à côté de `docker-compose.yml` (par exemple `LITELLM_BASE_URL=http://host.docker.internal:4000`). La valeur `localhost` de `backend/.env` est ignorée par Docker, car `localhost` désigne alors le conteneur lui-même.
 
-## Déploiement sur Kubernetes (Helm) {#kubernetes}
+## Déploiement sur Kubernetes (Helm)
 
 Le chart `charts/pyxel-ai-playground` déploie l'application pour une classe ou un établissement. Les élèves s'y connectent avec le compte de votre fournisseur d'identité (Keycloak, Google, tout fournisseur OIDC).
 
@@ -106,7 +106,7 @@ Les valeurs à connaître (toutes dans `charts/pyxel-ai-playground/values.yaml`)
 
 Les images sont publiées sur GitHub Container Registry : `ghcr.io/dmetzler/pyxel-ai-playground-backend` et `ghcr.io/dmetzler/pyxel-ai-playground-frontend`.
 
-## Développement {#developpement}
+## Développement
 
 ### 1. Backend
 
@@ -134,7 +134,7 @@ Ouvrez le navigateur, tapez « Je veux créer un jeu de labyrinthe », et c'est 
 
 Côté frontend, ajoutez la langue dans `frontend/src/i18n.ts` (TypeScript signale toute clé manquante) et dans `frontend/src/starter.ts`. Côté backend, ajoutez `backend/prompt_<langue>.md`, les chaînes de `backend/i18n.py`, puis autorisez la langue dans l'API.
 
-## Tests {#tests}
+## Tests
 
 ```bash
 cd backend && pip install -r requirements-dev.txt && python -m pytest -q
@@ -144,7 +144,7 @@ cd frontend && npm test
 - Backend (`backend/tests/`) : la vraie application FastAPI, le harness Strands, git et Pyxel sans écran, avec un modèle scripté à la place de LiteLLM (ni réseau, ni clé d'API). Les tests couvrent l'enregistrement et le chargement des jeux, le flux du chat et ses commits, le bac à sable des fichiers, l'arrêt, l'annulation, la suppression, l'export et l'import (zips dangereux compris), le livret PDF, les langues et `res_tool.py`.
 - Frontend (`frontend/src/*.test.ts`, Vitest) : le calcul de la marge des changements, le nettoyage du texte du chat, l'analyse du flux SSE, les appels à l'API et la complétude des traductions.
 
-## Organisation du projet {#organisation}
+## Organisation du projet
 
 ```
 backend/
@@ -170,6 +170,6 @@ docs/images/      capture d'écran du README
 games/            un dossier (et un dépôt git) par jeu, non versionné ici
 ```
 
-## Licence {#licence}
+## Licence
 
 Ce projet est publié sous licence [Apache 2.0](LICENSE).
